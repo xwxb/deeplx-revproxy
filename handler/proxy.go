@@ -2,13 +2,16 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/xwxb/deeplx-revproxy/config"
 	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 func sortEndpointsByWeightDesc(eps []config.Endpoint) []config.Endpoint {
@@ -59,7 +62,7 @@ func ProxyHandler(c *gin.Context) {
 		log.Println("Proxying request to", url)
 
 		// todo 内部实现一个重试 + 超时
-		resp, err := sendRequest(url, req)
+		resp, err := sendRequest(url, req, ep.Timeout)
 		if err == nil && resp.Code == 200 {
 			c.JSON(http.StatusOK, resp)
 			return
@@ -70,7 +73,10 @@ func ProxyHandler(c *gin.Context) {
 	c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy request, all endpoints are down."})
 }
 
-func sendRequest(url string, req *Request) (*NormalResponse, error) {
+func sendRequest(url string, req *Request, timeout int) (*NormalResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
 	reqJsonBytes, err := json.Marshal(req)
 	if err != nil {
 		return &NormalResponse{
@@ -79,11 +85,26 @@ func sendRequest(url string, req *Request) (*NormalResponse, error) {
 	}
 
 	// 转发请求
-	resp, err := http.Post(url, "application/json", bytes.NewReader(reqJsonBytes))
+	client := http.Client{}
+	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(reqJsonBytes))
 	if err != nil {
 		return &NormalResponse{
-			Code: http.StatusBadGateway,
+			Code: http.StatusInternalServerError,
 		}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(httpReq.WithContext(ctx))
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) { // 好像不管用？
+			return &NormalResponse{
+				Code: http.StatusRequestTimeout,
+			}, err
+		} else {
+			return &NormalResponse{
+				Code: http.StatusBadGateway,
+			}, err
+		}
 	}
 	defer resp.Body.Close()
 

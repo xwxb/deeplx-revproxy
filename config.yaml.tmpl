@@ -1,4 +1,4 @@
-# 目前自动兼容加或者不不加 `translate` 的两种情况，字符串检测，目测性能消耗不大
+# 目前自动兼容加或者不不加 `translate` 的两种情况，字符串存在检测，目测性能消耗不大
 endpoints:
   - url: https://example.com
     weight: 1
@@ -10,10 +10,10 @@ endpoints:
   - url: https://example.com/translate?token=666666
 
 default:
-  - timeout: 5
+  timeout: 5
 
 general:
-  - max_retries: 2  # 暂时没有考虑让重试数可单独配
+  max_retries: 2  # 暂时没有考虑让重试数可单独配
 
 server:
-  - port: 8080
+  port: 8080
